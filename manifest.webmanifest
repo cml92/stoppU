@@ -1,0 +1,13 @@
+{
+  "name": "Premium Stoppuhr",
+  "short_name": "Stoppuhr",
+  "description": "Eine einfache, offline nutzbare Stoppuhr mit Rundenzeiten.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#101827",
+  "theme_color": "#101827",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

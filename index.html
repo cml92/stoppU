@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101827">
+  <meta name="description" content="Eine einfache, offline nutzbare Stoppuhr mit Rundenzeiten.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Stoppuhr">
+  <title>Stoppuhr</title>
+  <style>
+    :root { color-scheme: dark; --blue:#38bdf8; --panel:rgba(255,255,255,.065); }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; min-height:100svh; padding: max(22px, env(safe-area-inset-top)) 18px max(22px, env(safe-area-inset-bottom));
+      display:grid; place-items:center; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      color:#f8fafc; background:radial-gradient(circle at 20% 10%,#263b59 0,#172438 38%,#0b1220 100%);
+    }
+    .app { width:min(100%,480px); padding:30px 22px 22px; border:1px solid rgba(255,255,255,.12);
+      border-radius:28px; background:rgba(255,255,255,.055); box-shadow:0 24px 70px #0006; }
+    header { text-align:center; margin-bottom:30px; }
+    h1 { margin:0; font-size:17px; letter-spacing:5px; }
+    .subtitle { color:#94a3b8; margin:9px 0 0; font-size:13px; }
+    .display { padding:35px 8px; text-align:center; border:1px solid #ffffff16; border-radius:22px; background:#ffffff08; }
+    #time { font:300 clamp(36px,9vw,54px)/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:-2px; white-space:nowrap; }
+    #time .fraction { color:var(--blue); }
+    .state { display:flex; align-items:center; justify-content:center; gap:8px; margin-top:16px; color:#94a3b8; font-size:11px; letter-spacing:2px; }
+    .dot { width:7px; height:7px; border-radius:50%; background:#64748b; }
+    .dot.running { background:#22c55e; box-shadow:0 0 12px #22c55e88; }
+    .buttons { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px; }
+    button { min-height:52px; border:0; border-radius:14px; padding:12px 14px; color:white; font-size:15px; font-weight:700; cursor:pointer; touch-action:manipulation; }
+    button:active { transform:scale(.98); }
+    button:disabled { opacity:.4; cursor:not-allowed; }
+    #start { background:#16a34a; } #lap { background:#0284c7; }
+    #reset { background:#b91c1c; } #clear { background:#334155; }
+    .laps { margin-top:28px; }
+    .laps-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+    h2 { margin:0; font-size:12px; letter-spacing:2px; color:#94a3b8; }
+    #count { font-size:12px; color:#64748b; }
+    #lapList { list-style:none; padding:0; margin:0; max-height:230px; overflow:auto; }
+    #lapList li { display:flex; gap:12px; align-items:center; padding:14px 12px; margin-top:8px; border-radius:12px; background:var(--panel); font-variant-numeric:tabular-nums; }
+    .lap-name { color:#e2e8f0; } .lap-best { margin-left:8px; color:#4ade80; font-size:9px; letter-spacing:1px; font-weight:800; }
+    .lap-time { margin-left:auto; color:var(--blue); font:14px ui-monospace,monospace; }
+    .empty { padding:22px 8px; text-align:center; color:#64748b; font-size:13px; }
+    footer { text-align:center; color:#64748b; font-size:10px; letter-spacing:2px; margin-top:24px; }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header><h1>STOPPUHR</h1><p class="subtitle">Zeit im Blick.</p></header>
+    <section class="display" aria-live="off">
+      <div id="time">00:00:00<span class="fraction">.00</span></div>
+      <div class="state"><span id="dot" class="dot"></span><span id="status">BEREIT</span></div>
+    </section>
+    <section class="buttons" aria-label="Stoppuhr-Steuerung">
+      <button id="reset" type="button">↻ Reset</button>
+      <button id="start" type="button">▶ Start</button>
+      <button id="lap" type="button" disabled>⚑ Runde</button>
+      <button id="clear" type="button">Runden löschen</button>
+    </section>
+    <section class="laps">
+      <div class="laps-head"><h2>RUNDENZEITEN</h2><span id="count">0 Runden</span></div>
+      <ol id="lapList"><li class="empty">Noch keine Runden vorhanden</li></ol>
+    </section>
+    <footer>OFFLINE STOPPUHR</footer>
+  </main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  let running = false, startAt = 0, elapsed = 0, frame = 0, laps = [];
+  const now = () => performance.now();
+  const current = () => elapsed + (running ? now() - startAt : 0);
+  const format = ms => {
+    const cs = Math.floor(ms / 10), h = Math.floor(cs / 360000);
+    const m = Math.floor(cs / 6000) % 60, s = Math.floor(cs / 100) % 60, c = cs % 100;
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(c).padStart(2,'0')}`;
+  };
+  function render() {
+    const parts = format(current()).split('.');
+    $('time').innerHTML = `${parts[0]}<span class="fraction">.${parts[1]}</span>`;
+    $('status').textContent = running ? 'STOPPUHR LÄUFT' : (elapsed ? 'PAUSIERT' : 'BEREIT');
+    $('dot').classList.toggle('running', running);
+    $('start').textContent = running ? 'Ⅱ Pause' : (elapsed ? '▶ Weiter' : '▶ Start');
+    $('lap').disabled = !running;
+    if (running) frame = requestAnimationFrame(render);
+  }
+  function start() { if (running) return; startAt = now(); running = true; render(); }
+  function pause() { if (!running) return; elapsed = current(); running = false; cancelAnimationFrame(frame); render(); }
+  function reset() { pause(); elapsed = 0; laps = []; drawLaps(); render(); }
+  function addLap() { if (!running) return; const total = current(); const previous = laps[0]?.total ?? 0; laps.unshift({ number: laps.length + 1, split: total - previous, total }); drawLaps(); }
+  function drawLaps() {
+    $('count').textContent = `${laps.length} ${laps.length === 1 ? 'Runde' : 'Runden'}`;
+    const list = $('lapList'); list.replaceChildren();
+    if (!laps.length) { const li = document.createElement('li'); li.className='empty'; li.textContent='Noch keine Runden vorhanden'; list.append(li); return; }
+    const best = Math.min(...laps.map(l => l.split));
+    laps.forEach(l => {
+      const li = document.createElement('li');
+      const name = document.createElement('span'); name.className='lap-name'; name.textContent=`Runde ${l.number}`;
+      if (l.split === best) { const badge=document.createElement('span'); badge.className='lap-best'; badge.textContent='BESTZEIT'; name.append(badge); }
+      const time=document.createElement('span'); time.className='lap-time'; time.textContent=format(l.split);
+      li.append(name,time); list.append(li);
+    });
+  }
+  $('start').addEventListener('click', () => running ? pause() : start());
+  $('reset').addEventListener('click', reset);
+  $('lap').addEventListener('click', addLap);
+  $('clear').addEventListener('click', () => { laps=[]; drawLaps(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && running) { cancelAnimationFrame(frame); render(); } });
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(console.error));
+  }
+  drawLaps(); render();
+})();
+</script>
+</body>
+</html>
